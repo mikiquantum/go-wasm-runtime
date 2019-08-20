@@ -1,1 +1,1 @@
-# go-wasm
+# go-wasm-runtime
