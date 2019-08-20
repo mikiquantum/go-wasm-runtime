@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"syscall"
 	"time"
 	"unsafe"
 
@@ -40,11 +39,14 @@ import (
 
 //export debug
 func debug(ctx unsafe.Pointer, sp int32) {
-	log.Println(sp)
+	fmt.Println("debug")
+	b := getBridge(ctx)
+	fmt.Println(b.loadString(sp + 16))
 }
 
 //export wexit
 func wexit(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("exit")
 	b := getBridge(ctx)
 	b.vmExit = true
 	b.exitCode = int(b.getUint32(sp + 8))
@@ -52,23 +54,25 @@ func wexit(ctx unsafe.Pointer, sp int32) {
 
 //export wwrite
 func wwrite(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("write")
 	b := getBridge(ctx)
 	fd := int(b.getInt64(sp+8))
 	p := b.getInt64(sp+16)
 	n := b.getInt32(sp+24)
 	mem := b.mem()
 	data := mem[p:p+int64(n)]
-	fmt.Printf("write FD %d\n", fd)
-	_, err := syscall.Write(fd, data)
-	if err != nil {
-		fmt.Println("Error write: ", err.Error())
-	}
+	fmt.Printf("write FD %d %s\n", fd, string(data))
+	//_, err := syscall.Write(fd, data)
+	//if err != nil {
+	//	fmt.Println("Error write: ", err.Error())
+	//}
 }
 
 //export nanotime
 func nanotime(ctx unsafe.Pointer, sp int32) {
+	b := getBridge(ctx)
 	n := time.Now().UnixNano()
-	getBridge(ctx).setInt64(sp+8, n)
+	b.setInt64(sp+8, n)
 }
 
 //export walltime
@@ -88,6 +92,7 @@ func clearScheduledCallback(ctx unsafe.Pointer, sp int32) {
 
 //export getRandomData
 func getRandomData(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("Calling randomData")
 	s := getBridge(ctx).loadSlice(sp + 8)
 	_, err := rand.Read(s)
 	// TODO how to pass error?
@@ -103,13 +108,14 @@ func stringVal(ctx unsafe.Pointer, sp int32) {
 
 //export valueGet
 func valueGet(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("valueget")
 	b := getBridge(ctx)
 	str := b.loadString(sp + 16)
 	id, val := b.loadValue(sp + 8)
 	sp = b.getSP()
 	obj, ok := val.(*object)
 	if !ok {
-		fmt.Println("valueGet", str, id)
+		fmt.Println("valueGet", str, id, val)
 		b.storeValue(sp+32, val)
 		return
 	}
@@ -119,12 +125,13 @@ func valueGet(ctx unsafe.Pointer, sp int32) {
 		// TODO
 		log.Fatal("missing property", val, str)
 	}
-	fmt.Println("valueGet", str, id, obj.name)
 	b.storeValue(sp+32, res)
+	fmt.Println("valueGet", str, id, obj.name)
 }
 
 //export valueSet
 func valueSet(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("valueset")
 	b := getBridge(ctx)
 	str := b.loadString(sp + 16)
 	_, v := b.loadValue(sp + 8)
@@ -136,7 +143,15 @@ func valueSet(ctx unsafe.Pointer, sp int32) {
 
 //export valueIndex
 func valueIndex(ctx unsafe.Pointer, sp int32) {
-	log.Println("valueIndex")
+	fmt.Println("valueindex")
+	b := getBridge(ctx)
+	_, vi := b.loadValue(sp + 8)
+	v := reflect.ValueOf(vi)
+	v = reflect.Indirect(v)
+	idx := b.getInt64(sp + 16)
+	vv := v.Index(int(idx))
+	log.Println("valueIndex", reflect.TypeOf(vi), vv)
+	b.storeValue(sp + 24, vv)
 }
 
 //export valueSetIndex
@@ -146,6 +161,7 @@ func valueSetIndex(ctx unsafe.Pointer, sp int32) {
 
 //export valueCall
 func valueCall(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("valuecall")
 	b := getBridge(ctx)
 	id, val := b.loadValue(sp + 8)
 	str := b.loadString(sp + 16)
@@ -173,6 +189,7 @@ func valueInvoke(ctx unsafe.Pointer, sp int32) {
 
 //export valueNew
 func valueNew(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("valuenew")
 	b := getBridge(ctx)
 	id, val := b.loadValue(sp + 8)
 	args := b.loadSliceOfValues(sp + 16)
@@ -189,23 +206,33 @@ func valueNew(ctx unsafe.Pointer, sp int32) {
 
 //export valueLength
 func valueLength(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("valuelength")
 	b := getBridge(ctx)
-	_, v := b.loadValue(sp + 8)
-	b.setInt64(sp + 16, 32)
-	log.Println("valueLength", v)
+	_, vi := b.loadValue(sp + 8)
+	v := reflect.ValueOf(vi)
+	v = reflect.Indirect(v) //deref potential ptr
+	b.setInt64(sp + 16, int64(v.Len()))
+	log.Println("valueLength", v.Len())
 }
 
 //export valuePrepareString
 func valuePrepareString(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("valueprep")
 	b := getBridge(ctx)
-	str := b.loadString(sp + 8)
-	b.storeValue(sp + 16, str)
-	b.setInt64(sp + 24, int64(len(str)))
-	log.Println("valuePrepareString", str)
+	_, v := b.loadValue(sp + 8)
+	vs, ok := v.(string)
+	if !ok {
+		log.Println("no string", reflect.TypeOf(v), v)
+	} else {
+		b.storeValue(sp + 16, vs)
+		b.setInt64(sp + 24, int64(len(vs)))
+		log.Println("valuePrepareString", vs)
+	}
 }
 
 //export valueLoadString
 func valueLoadString(ctx unsafe.Pointer, sp int32) {
+	fmt.Println("valueloadstr")
 	b := getBridge(ctx)
 	_, str := b.loadValue(sp + 8)
 	log.Println("valueLoadString", str)

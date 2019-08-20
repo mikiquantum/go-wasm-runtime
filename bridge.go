@@ -162,10 +162,23 @@ func (b *Bridge) Run() error {
 		return err
 	}
 	fmt.Println("RUN ran!")
+	fmt.Println("Exports", b.instance.Exports)
+	//printWasm, ok := b.instance.Exports["printWasm"]
+	//if !ok {
+	//	return errors.New("printWasm not found")
+	//}
+	//_, err = printWasm()
+	//if err != nil {
+	//	fmt.Println("Error printWasm")
+	//	return err
+	//}
+	var c int
 	for !b.vmExit {
+		fmt.Println("Count:", c)
+		c++
 		_, err = resume()
 		if err != nil {
-			return err
+			return fmt.Errorf("error resume: %s", err.Error())
 		}
 	}
 
@@ -239,6 +252,7 @@ func (b *Bridge) loadSlice(addr int32) []byte {
 }
 
 func (b *Bridge) loadString(addr int32) string {
+	fmt.Println("Calling loadString")
 	d := b.loadSlice(addr)
 	return string(d)
 }
